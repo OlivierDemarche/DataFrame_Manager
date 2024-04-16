@@ -1,21 +1,30 @@
+import multiprocessing
+import os
 import tkinter as tk
+from collections import Counter
 from datetime import datetime as dt
 from tkinter import *
 from tkinter import messagebox, ttk, simpledialog, filedialog
 
+
 import pandas as pd
 import plotly.graph_objs as go
+from fpdf import FPDF
+from sklearn.cluster import KMeans
 from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.svm import OneClassSVM
 from tkinterdnd2 import DND_FILES, TkinterDnD
+from tqdm import tqdm
 
 # CONSTANTS ------------------------------------------------
-
 LIST_OF_FILES = []
 LIST_OF_DATA_FRAME = []
 
-
 # Functions ------------------------------------------------
+os.environ["LOKY_MAX_CPU_COUNT"] = str(multiprocessing.cpu_count())
+
 
 # --------------------------------------------------------------------------------
 # Message ------------------------------------------------------------------------
@@ -25,7 +34,7 @@ def custom_entry_dialog(title, message, callback):
     dialog.title(title)
     # Label pour le message
     new_label = tk.Label(dialog, text=message)
-    new_label.pack(pady=10)
+    new_label.pack(pady=10, padx=10)
     # Champ d'entrée pour le délimiteur
     entry_var = tk.StringVar()
     entry = ttk.Entry(dialog, textvariable=entry_var, width=30)
@@ -40,7 +49,7 @@ def custom_entry_dialog(title, message, callback):
 
     # Bouton "OK"
     ok_button = ttk.Button(dialog, text="OK", command=save_and_close)
-    ok_button.pack(side="left", padx=5)
+    ok_button.pack(side="left", padx=10, pady=10)
 
     # Fonction pour fermer la boîte de dialogue sans sauvegarder
     def close_dialog():
@@ -48,18 +57,18 @@ def custom_entry_dialog(title, message, callback):
 
     # Bouton "Annuler"
     cancel_button = ttk.Button(dialog, text="Annuler", command=close_dialog)
-    cancel_button.pack(side="right", padx=5)
+    cancel_button.pack(side="right", padx=10, pady=10)
     dialog.transient(root)  # Définit la fenêtre comme dépendante de la fenêtre principale
     dialog.grab_set()  # Empêche l'interaction avec d'autres fenêtres
     root.wait_window(dialog)  # Attend que la boîte de dialogue se ferme
 
 
-def column_choice_dialog(df, choice):
+def column_choice_dialog(df, choice, df_name):
     texte = ""
     fonction = None
     if choice == "describe":
         texte = "Choisissez une colonne à décrire :"
-        fonction = (lambda: describe_selected_column(df, column_var))
+        fonction = (lambda: describe_selected_column(df, column_var, df_name))
     elif choice == "rename":
         texte = "Choisissez une colonne à renommer :"
         fonction = (lambda: rename_column_dialog(df, column_var))
@@ -82,19 +91,6 @@ def column_choice_dialog(df, choice):
     ok_button.pack(pady=5)
 
 
-def handle_contamination_callback(value, df, index):
-    try:
-        contamination_value = float(value)
-        if 0 <= contamination_value <= 1:
-            selected_df_name = lb.get(index)  # Récupérer le nom du DataFrame sélectionné
-            clean_dataframe(df, selected_df_name,
-                            contamination_value)  # Passer le DataFrame, son nom et la valeur de contamination à la fonction clean_dataframe
-        else:
-            messagebox.showerror("Erreur", "La valeur de contamination doit être comprise entre 0 et 1.")
-    except ValueError:
-        messagebox.showerror("Erreur", "Veuillez entrer une valeur numérique pour la contamination.")
-
-
 def show_entry_dialog(callback):
     custom_entry_dialog("Choix du délimiteur", "Entrez le délimiteur utilisé dans le fichier :", callback)
 
@@ -106,7 +102,7 @@ def contamination_choice(callback):
 
 
 def show_attention_message_box():
-    messagebox.showerror("Attention", "Le fichier doit être un fichier .csv")
+    messagebox.showerror("Attention", "Le(s) fichier(s) doit/doivent être un/des fichier(s) '.csv'")
 
 
 def show_selection_error():
@@ -114,7 +110,7 @@ def show_selection_error():
 
 
 def show_file_registered():
-    messagebox.showinfo("Information", "Le fichier à bien été enregistrer")
+    messagebox.showinfo("Information", "Le(s) fichier(s) à/ont bien été(s) enregistré(s)")
     print(LIST_OF_DATA_FRAME)
 
 
@@ -134,7 +130,8 @@ def describe_selected_dataframe():
     try:
         index = lb.curselection()[0]
         selected_df = LIST_OF_DATA_FRAME[index]
-        column_choice_dialog(selected_df, choice="describe")
+        selected_df_name = lb.get(index)
+        column_choice_dialog(selected_df, choice="describe", df_name=selected_df_name)
     except IndexError:
         pass
 
@@ -164,7 +161,7 @@ def rename_columns():
     try:
         index = lb.curselection()[0]
         selected_df = LIST_OF_DATA_FRAME[index]
-        column_choice_dialog(selected_df, choice="rename")
+        column_choice_dialog(selected_df, choice="rename", df_name=None)
     except IndexError:
         pass
 
@@ -173,8 +170,8 @@ def clean_df():
     try:
         index = lb.curselection()[0]
         selected_df = LIST_OF_DATA_FRAME[index]
-        contamination_choice(lambda value: handle_contamination_callback(value, selected_df,
-                                                                         index))  # Passer l'index à la fonction de rappel
+        selected_df_name = lb.get(index)
+        clean_dataframe(df=selected_df, name=selected_df_name)
     except IndexError:
         pass
 
@@ -313,7 +310,7 @@ def combination_selection():
                                     width=30)  # Ajuster la largeur selon le contenu
         df_combobox2.pack(pady=(0, 5), padx=10)  # Ajout du padding uniquement en bas
 
-        def update_df2_values():
+        def update_df2_values(*args):
             df_combobox2.set('')
             # Mettre à jour les valeurs de la deuxième Combobox
             selected_df1 = df_1.get()
@@ -323,7 +320,7 @@ def combination_selection():
                 df_combobox2['values'] = remaining_dfs
 
         # Mettre à jour les valeurs de la deuxième Combobox lorsque la première Combobox est modifiée
-        df_1.trace_add('write', lambda *args: update_df2_values())
+        df_1.trace_add('write', update_df2_values)
 
         def choose_common_column():
             # Désactiver les Combobox df_1 et df_2
@@ -389,13 +386,7 @@ def detect_temporal_columns(df):
     # Convertir les colonnes temporelles en timestamp
     for col in temporal_columns:
         df[col] = pd.to_datetime(df[col], errors="coerce")
-        # Proposer de renommer la colonne
-        new_name = rename_temporal_column(column=col, df=df)
-        if new_name:
-            df.rename(columns={col: new_name}, inplace=True)
-            temporal_columns.remove(col)
-            temporal_columns.append(new_name)
-    return temporal_columns
+    return
 
 
 def rename_temporal_column(column, df):
@@ -426,25 +417,99 @@ def save_file(selected_df, file_name):
 def save_new_dataframe(filepath, delimiter):
     df = pd.read_csv(filepath, delimiter=delimiter)
     df = df.dropna()
-    temporal_columns = detect_temporal_columns(df)
-    if temporal_columns:
-        messagebox.showinfo("Information",
-                            f"Les colonnes temporelles suivantes ont été détectées : {', '.join(temporal_columns)}")
+    detect_temporal_columns(df)
+
     LIST_OF_DATA_FRAME.append(df)
 
 
 def on_drop(event):
-    file_paths = event.data.strip("{}").split("} {")
-    print(file_paths)
-    for file_path in file_paths:
-        if '.csv' in file_path:
-            LIST_OF_FILES.append(file_path)
-            delimiter = detect_delimiter(file_path)
-            save_new_dataframe(filepath=file_path, delimiter=delimiter)
-            show_file_registered()
-            lb.insert(tk.END, file_path.split("/")[-1])
+    # Diviser la chaîne en segments en utilisant l'espace comme délimiteur
+    segments = event.data.split()
+    # Liste pour stocker les chemins de fichiers
+    file_paths_list = []
+    i = 0
+    while i < len(segments):
+        # Si le segment commence par "{", il est potentiellement entouré d'accolades
+        if segments[i].startswith("{"):
+            # Initialiser une chaîne pour stocker le chemin de fichier complet
+            file_path = segments[i].strip("{}")
+            # Si le segment ne se termine pas par "}", cela signifie qu'il y a un espace dans le chemin de fichier
+            while not segments[i].endswith("}"):
+                # Concaténer le segment suivant pour former le chemin de fichier complet
+                i += 1
+                file_path += " " + segments[i]
+            # Supprimer les accolades supplémentaires à la fin du chemin de fichier
+            file_path = file_path.rstrip("}")
+            # Ajouter le chemin de fichier à la liste
+            file_paths_list.append(file_path)
         else:
-            show_attention_message_box()
+            # Si le segment n'est pas entouré d'accolades, l'ajouter directement à la liste
+            file_paths_list.append(segments[i])
+        i += 1
+    should_load = []
+    for item in file_paths_list:
+        slice_item = item[-4:]
+        if slice_item == ".csv":
+            should_load.append(True)
+        else:
+            should_load.append(False)
+    if False not in should_load:
+        # Maintenant, file_paths_list contient tous les chemins de fichiers, certains entourés d'accolades et d'autres non
+        # Créer une fenêtre de progression
+        progress_window = tk.Toplevel(root)
+        progress_window.title("Progression du chargement")
+        # Maintenir la fenêtre au premier plan
+        progress_window.lift()
+        # Grabber la fenêtre pour s'assurer qu'elle reste au premier plan
+        progress_window.grab_set()
+        # Masquer la fenêtre de progression initialement
+        progress_window.withdraw()
+        # Calculer la position pour centrer la fenêtre de progression par rapport à la fenêtre principale
+        root.update_idletasks()
+        window_width = progress_window.winfo_width()
+        window_height = progress_window.winfo_height()
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        progress_window.geometry(f"+{x}+{y}")
+        # Créer une barre de progression
+        progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+        progress_bar.pack(padx=20, pady=10)
+        progress_label = tk.Label(progress_window, text="Chargement en cours...")
+        progress_label.pack(padx=20, pady=(0, 10))
+        # Calculer le nombre total de fichiers et la valeur à ajouter à la barre de progression à chaque itération
+        total_files = len(file_paths_list)
+        progress_step = 100 / total_files
+        # Afficher la fenêtre de progression
+        progress_window.deiconify()
+        # Appeler la fonction pour démarrer le chargement après un court délai
+        root.after(100,
+                   lambda: start_loading(progress_window, progress_bar, total_files, file_paths_list, progress_step))
+    else:
+        show_attention_message_box()
+
+
+# Utilisez start_loading comme fonction séparée
+def start_loading(progress_window, progress_bar, total_files, file_paths_list, progress_step):
+    # Rafraîchir l'interface graphique avant de commencer le chargement
+    root.update_idletasks()
+    # Lancer le chargement des fichiers
+    with tqdm(total=total_files, desc="Ajout des fichiers") as pbar:
+        for file_path in file_paths_list:
+            if os.path.exists(file_path):
+                LIST_OF_FILES.append(file_path)
+                delimiter = detect_delimiter(file_path)
+                save_new_dataframe(filepath=file_path, delimiter=delimiter)
+                lb.insert(tk.END, os.path.basename(file_path))
+            pbar.update(1)
+            # Mettre à jour la barre de progression
+            progress_bar["value"] += progress_step
+            root.update()
+
+            # Fermer la fenêtre de progression une fois le chargement terminé
+    progress_window.destroy()
+    show_file_registered()
 
 
 def rename_column_dialog(df, column_var):
@@ -462,32 +527,213 @@ def rename_column_dialog(df, column_var):
         messagebox.showinfo("Information", "Aucun nouveau nom spécifié.")
 
 
-def describe_selected_column(df, column_var):
+def describe_selected_column(df, column_var, df_name):
     selected_column = column_var.get()
     if selected_column:
         describe_window = tk.Toplevel(root)
         describe_window.title(f"Description de {selected_column}")
 
-        # Création d'un widget Text pour afficher la description de la colonne
-        text_widget = tk.Text(describe_window, wrap="word", height=10, width=50, selectbackground="blue")
-        text_widget.insert("end", df[selected_column].describe())
+        # Récupération des statistiques de la colonne sélectionnée
+        description = df[selected_column].describe()
+        title = f"DataFrame : {df_name}"
+        title_2 = f"Colonne sélectionnée : {selected_column}"
+        title_3 = f"Statistiques"
+        # Création du texte formaté avec les valeurs récupérées
+
+        report_text = (
+            f"{title}\n"
+            f"{'-' * 70}\n"
+            f"{title_2}\n"
+            f"{'-' * 70}\n"
+            f"{title_3}\n"
+            f"{'-' * 70}\n"
+            f"Nombre d'éléments : {description['count']}\n"
+            f"Moyenne : {description['mean']:.2f}\n"
+            f"Écart-type : {description['std']:.2f}\n"
+            f"Minimum : {description['min']}\n"
+            f"25ème percentile : {description['25%']}\n"
+            f"50ème percentile : {description['50%']}\n"
+            f"75ème percentile : {description['75%']}\n"
+            f"Maximum : {description['max']}\n"
+
+        )
+        # Affichage du texte formaté dans un widget Text
+        text_widget = tk.Text(describe_window, wrap="word", height=15, width=60, selectbackground="blue")
+        text_widget.insert("end", report_text)
         text_widget.config(state="disabled")
         text_widget.pack(expand=True, fill="both", padx=10, pady=10)
+        # Fixer la taille de la fenêtre
+        describe_window.geometry("700x400")  # Définition d'une taille fixe pour la fenêtre
 
-        # Ajout d'une barre de défilement pour le texte
-        scroll_y = tk.Scrollbar(describe_window, orient="vertical", command=text_widget.yview)
-        scroll_y.pack(side="right", fill="y")
-        text_widget.config(yscrollcommand=scroll_y.set)
+        # Fonction pour enregistrer le rapport au format PDF
+        def save_report_as_pdf():
+            file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")])
+            if file_path:
+                # Créer un nouvel objet FPDF
+                pdf = FPDF()
+                pdf.set_auto_page_break(auto=True, margin=15)
+                pdf.add_page()
+                # Définir la police et la taille par défaut
+                pdf.set_font("Arial", size=10)
+                # Interligne personnalisée
+                interline = 0.1
+                # Ajouter le titre en gras
+                pdf.set_font("Arial", "B", 12)  # Police Arial, gras, taille 12
+                pdf.cell(200, 10, "Analyse statistique d'une DataFrame", ln=True,
+                         align="C")  # ln=True pour passer à la ligne après le titre
+                pdf.set_font("Arial", size=10)  # Réinitialiser la police
+                # Rétablir la position Y après le titre
+                y_position = pdf.get_y() + interline
+                # Ajouter le reste du texte formaté au PDF
+                for line in report_text.split("\n"):
+                    pdf.set_y(y_position)
+                    pdf.multi_cell(0, 8, line)
+                    y_position = pdf.get_y() + interline
+                # Sauvegarder le fichier PDF
+                pdf.output(file_path)
 
-        # Ajuster la taille de la fenêtre de description en fonction du texte présent
-        text_widget.update_idletasks()
-        text_width = text_widget.winfo_reqwidth()
-        text_height = text_widget.winfo_reqheight()
-        describe_window.geometry(f"{text_width + 100}x{text_height + 50}")
+        # Ajout du bouton "Enregistrer un rapport en PDF"
+        save_button = tk.Button(describe_window, text="Enregistrer un rapport en PDF", command=save_report_as_pdf)
+        save_button.pack(pady=10)
 
 
-def clean_dataframe(df, name, contamination_value):
-    cols_to_include = []  # Colonnes à inclure
+def clean_dataframe(df, name):
+    # Définir les noms des algorithmes disponibles
+    algorithms = ["Isolation Forest", "Local Outlier Factor", "One-Class SVM", "K-Means Clustering"]
+    df_algorithm = tk.Toplevel(root)
+    df_algorithm.title("Choix de l'algorithme de nettoyage")
+
+    # Centrer la fenêtre
+    window_width = 500
+    window_height = 150
+    screen_width = df_algorithm.winfo_screenwidth()
+    screen_height = df_algorithm.winfo_screenheight()
+    x_coordinate = (screen_width / 2) - (window_width / 2)
+    y_coordinate = (screen_height / 2) - (window_height / 2)
+    df_algorithm.geometry(f"{window_width}x{window_height}+{int(x_coordinate)}+{int(y_coordinate)}")
+
+    # Label pour le message
+    new_label = tk.Label(df_algorithm,
+                         text="Choisissez l'algorithme à utiliser pour nettoyer vos données :")
+    new_label.pack(pady=15)
+
+    # Créer une Combobox pour afficher les df disponibles
+    df_1 = tk.StringVar()
+    algo_combobox = ttk.Combobox(df_algorithm,
+                                 textvariable=df_1,
+                                 values=algorithms,
+                                 width=30)  # Ajuster la largeur selon le contenu
+    algo_combobox.pack(pady=(0, 5), padx=10)  # Ajout du padding uniquement en bas
+
+    def apply_algorithm():
+        selected_algorithm = algo_combobox.get()
+        contamination_value = 0
+        nu_value = 0
+        num_clusters = 0
+        if selected_algorithm is not None:
+            selected_algorithm = selected_algorithm.strip()
+            if selected_algorithm.isdigit():
+                selected_algorithm = int(selected_algorithm)
+                if 1 <= selected_algorithm <= len(algorithms):
+                    selected_algorithm = algorithms[selected_algorithm - 1]
+                else:
+                    messagebox.showerror("Erreur de sélection", "Veuillez sélectionner un algorithme valide.")
+                    return
+            else:
+                if selected_algorithm not in algorithms:
+                    messagebox.showerror("Erreur de sélection", "Veuillez sélectionner un algorithme valide.")
+                    return
+
+            # Si l'algorithme sélectionné nécessite une valeur de contamination, demander à l'utilisateur de la spécifier
+            if selected_algorithm in ["Isolation Forest", "Local Outlier Factor"]:
+                contamination_value = simpledialog.askfloat("Valeur de contamination",
+                                                            "Entrez une valeur de contamination entre 0 et 1 :")
+                if contamination_value is None:  # Vérifie si l'utilisateur à annuler ou fermé la fenêtre
+                    return  # Ne rien faire si l'utilisateur a annulé
+                if not (0 < contamination_value < 1):
+                    messagebox.showerror("Erreur de valeur",
+                                         "La valeur de contamination doit être comprise entre 0 et 1.")
+                    return
+            elif selected_algorithm == "K-Means Clustering":
+                num_clusters = simpledialog.askinteger("Nombre de clusters",
+                                                       "Entrez le nombre de clusters à définir :",
+                                                       initialvalue=2)  # Valeur par défaut
+                if num_clusters is None:  # Vérifie si l'utilisateur à annuler ou fermé la fenêtre
+                    return  # Ne rien faire si l'utilisateur a annulé
+                if not (0 < num_clusters):
+                    messagebox.showerror("Erreur de valeur",
+                                         "Le nombre de cluster doit être un entier positif.")
+                    return
+            elif selected_algorithm == "One-Class SVM":
+                nu_value = simpledialog.askfloat("Valeur de contamination",
+                                                 "Entrez une valeur de 'Nu' entre 0 et 1 :")
+                if nu_value is None:  # Vérifie si l'utilisateur à annuler ou fermé la fenêtre
+                    return  # Ne rien faire si l'utilisateur a annulé
+                if not (0 < nu_value < 1):
+                    messagebox.showerror("Erreur de valeur",
+                                         "La valeur de 'Nu' doit être comprise entre 0 et 1.")
+                    return
+            # Appliquer l'algorithme de nettoyage sélectionné avec la valeur de contamination spécifiée
+            if selected_algorithm == "Isolation Forest":
+                clean_with_isolation_forest(df, name, contamination_value)
+            elif selected_algorithm == "Local Outlier Factor":
+                clean_with_local_outlier_factor(df, name, contamination_value)
+            elif selected_algorithm == "One-Class SVM":
+                clean_with_one_class_svm(df, name, nu_value)
+            elif selected_algorithm == "K-Means Clustering":
+                clean_with_kmeans_clustering(df, name, num_clusters)
+
+    # Bouton OK
+    ok_button = ttk.Button(df_algorithm, text="Nettoyer", command=apply_algorithm)
+    ok_button.pack(pady=5)
+    # Centrer la fenêtre par rapport à la fenêtre principale (root)
+    df_algorithm.transient(root)
+    df_algorithm.grab_set()
+    root.wait_window(df_algorithm)
+
+
+def clean_with_isolation_forest(df, name, contamination_value):
+    cols_to_include = [col for col in df.columns if not pd.api.types.is_datetime64_any_dtype(df[col])]
+    df_filtered = df[cols_to_include]
+
+    if len(df_filtered.columns) > 0:
+        scaler = MinMaxScaler()
+        df_normalized = pd.DataFrame(scaler.fit_transform(df_filtered), columns=df_filtered.columns)
+        outlier_detector = IsolationForest(contamination=contamination_value)
+        outliers = outlier_detector.fit_predict(df_normalized)
+        df_cleaned = df[outliers == 1]
+        save_cleaned_dataframe(df_cleaned, name, "IsolationForest", contamination_value)
+
+
+def clean_with_local_outlier_factor(df, name, contamination_value):
+    cols_to_include = [col for col in df.columns if not pd.api.types.is_datetime64_any_dtype(df[col])]
+    df_filtered = df[cols_to_include]
+
+    if len(df_filtered.columns) > 0:
+        scaler = MinMaxScaler()
+        df_normalized = pd.DataFrame(scaler.fit_transform(df_filtered), columns=df_filtered.columns)
+        outlier_detector = LocalOutlierFactor(contamination=contamination_value)
+        outliers = outlier_detector.fit_predict(df_normalized)
+        df_cleaned = df[outliers == 1]
+        save_cleaned_dataframe(df_cleaned, name, "LocalOutlierFactor", contamination_value)
+
+
+def clean_with_one_class_svm(df, name, contamination_value):
+    cols_to_include = [col for col in df.columns if not pd.api.types.is_datetime64_any_dtype(df[col])]
+    df_filtered = df[cols_to_include]
+
+    if len(df_filtered.columns) > 0:
+        scaler = MinMaxScaler()
+        df_normalized = pd.DataFrame(scaler.fit_transform(df_filtered), columns=df_filtered.columns)
+        outlier_detector = OneClassSVM(nu=contamination_value)
+        outliers = outlier_detector.fit_predict(df_normalized)
+        df_cleaned = df[outliers == 1]
+        save_cleaned_dataframe(df_cleaned, name, "OneClassSVM", contamination_value)
+
+
+def clean_with_kmeans_clustering(df, name, num_clusters):
+    # Sélection des colonnes à inclure dans le clustering
+    cols_to_include = []
     for col in df.columns:
         if not pd.api.types.is_datetime64_any_dtype(df[col]):
             cols_to_include.append(col)
@@ -496,16 +742,29 @@ def clean_dataframe(df, name, contamination_value):
     if len(df_filtered.columns) > 0:
         scaler = MinMaxScaler()
         df_normalized = pd.DataFrame(scaler.fit_transform(df_filtered), columns=df_filtered.columns)
-        # Appliquer l'Isolation Forest sur les données normalisées
-        outlier_detector = IsolationForest(contamination=contamination_value)  # Utiliser la valeur de contamination
-        outliers = outlier_detector.fit_predict(df_normalized)
-        # Filtrer les données en supprimant les valeurs aberrantes
-        df_cleaned = df[outliers == 1]
+        # Appliquer K-Means Clustering sur les données normalisées
+        kmeans = KMeans(n_clusters=num_clusters)  # Nombre de clusters à définir
+        labels = kmeans.fit_predict(df_normalized)
+        # Compter les occurrences de chaque cluster
+        label_counts = Counter(labels)
+        most_common_label = label_counts.most_common(1)[0][0]  # Récupérer l'étiquette la plus fréquente
+        # Garder le cluster avec la majorité des points de données
+        df_cleaned = df[labels == most_common_label]
+        # Ajouter le DataFrame nettoyé à la liste
         LIST_OF_DATA_FRAME.append(df_cleaned)
-        cleaned_name = f"cleaned_({contamination_value})_({name})"
+        # Créer un nom pour le DataFrame nettoyé
+        cleaned_name = f"cleaned_(KMeans)_{name}"
+        # Ajouter le nom du DataFrame nettoyé à la listebox
         lb.insert(tk.END, cleaned_name)
-    else:
-        messagebox.showinfo("Information", "Aucune colonne à nettoyer, veuillez sélectionner un autre DataFrame.")
+
+
+def save_cleaned_dataframe(df, name, algorithm, contamination_value=None):
+    LIST_OF_DATA_FRAME.append(df)
+    cleaned_name = f"cleaned_{algorithm}"
+    if contamination_value is not None:
+        cleaned_name += f"_{contamination_value}"
+    cleaned_name += f"_{name}"
+    lb.insert(tk.END, cleaned_name)
 
 
 def detect_delimiter(file_path):

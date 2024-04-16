@@ -2,3 +2,6 @@ pandas~=2.2.2
 plotly~=5.20.0
 scikit-learn~=1.4.2
 tkinterdnd2~=0.3.0
+reportlab~=4.1.0
+fpdf~=1.7.2
+tqdm~=4.66.2
