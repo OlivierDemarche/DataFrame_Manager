@@ -6,7 +6,6 @@ from datetime import datetime as dt
 from tkinter import *
 from tkinter import messagebox, ttk, simpledialog, filedialog
 
-
 import pandas as pd
 import plotly.graph_objs as go
 from fpdf import FPDF
@@ -27,7 +26,7 @@ os.environ["LOKY_MAX_CPU_COUNT"] = str(multiprocessing.cpu_count())
 
 
 # --------------------------------------------------------------------------------
-# Message ------------------------------------------------------------------------
+# Message functions --------------------------------------------------------------
 # --------------------------------------------------------------------------------
 def custom_entry_dialog(title, message, callback):
     dialog = tk.Toplevel(root)
@@ -40,24 +39,21 @@ def custom_entry_dialog(title, message, callback):
     entry = ttk.Entry(dialog, textvariable=entry_var, width=30)
     entry.pack(pady=5)
 
-    # Fonction pour sauvegarder le délimiteur et fermer la boîte de dialogue
     def save_and_close():
         value = entry_var.get()
         if value != "":
             callback(value)
             dialog.destroy()
 
-    # Bouton "OK"
     ok_button = ttk.Button(dialog, text="OK", command=save_and_close)
     ok_button.pack(side="left", padx=10, pady=10)
 
-    # Fonction pour fermer la boîte de dialogue sans sauvegarder
     def close_dialog():
         dialog.destroy()
 
-    # Bouton "Annuler"
     cancel_button = ttk.Button(dialog, text="Annuler", command=close_dialog)
     cancel_button.pack(side="right", padx=10, pady=10)
+
     dialog.transient(root)  # Définit la fenêtre comme dépendante de la fenêtre principale
     dialog.grab_set()  # Empêche l'interaction avec d'autres fenêtres
     root.wait_window(dialog)  # Attend que la boîte de dialogue se ferme
@@ -73,20 +69,19 @@ def column_choice_dialog(df, choice, df_name):
         texte = "Choisissez une colonne à renommer :"
         fonction = (lambda: rename_column_dialog(df, column_var))
 
-    # Créer une liste des colonnes disponibles dans le DataFrame
     columns = df.columns.tolist()
     # Créer une nouvelle fenêtre pour la boîte de dialogue
     column_dialog = tk.Toplevel(root)
     column_dialog.title("Choix de la colonne")
-    # Label pour le message
+
     new_label = tk.Label(column_dialog, text=texte)
     new_label.pack(pady=10)
-    # Créer une Combobox pour afficher les colonnes disponibles
+
     column_var = tk.StringVar()
     column_combobox = ttk.Combobox(column_dialog, textvariable=column_var, values=columns,
                                    width=max(len(col) for col in columns) + 2)
     column_combobox.pack(pady=(0, 5), padx=10)  # Ajout du padding uniquement en bas
-    # Bouton OK
+
     ok_button = ttk.Button(column_dialog, text="OK", command=fonction)  # Appel de la fonction ici
     ok_button.pack(pady=5)
 
@@ -141,15 +136,15 @@ def show_columns():
         index = lb.curselection()[0]
         selected_df = LIST_OF_DATA_FRAME[index]
         columns = [f"{item}\n" for item in selected_df.columns]
-        # Création d'une nouvelle fenêtre pour afficher les colonnes
+
         columns_window = tk.Toplevel(root)
         columns_window.title("Colonnes")
-        # Création d'un widget Text pour afficher les colonnes
+
         text_widget = tk.Text(columns_window, wrap="none", height=10, width=50, selectbackground="blue")
         text_widget.insert("end", "".join(columns))
         text_widget.config(state="disabled")
         text_widget.pack(expand=True, fill="both", padx=10, pady=10)
-        # Ajout d'une barre de défilement pour le texte
+
         scroll_y = tk.Scrollbar(columns_window, orient="vertical", command=text_widget.yview)
         scroll_y.pack(side="right", fill="y")
         text_widget.config(yscrollcommand=scroll_y.set)
@@ -180,7 +175,7 @@ def register_df():
     try:
         index = lb.curselection()[0]
         selected_df = LIST_OF_DATA_FRAME[index]
-        selected_df_name = lb.get(index)  # Récupérer le nom du DataFrame sélectionné
+        selected_df_name = lb.get(index)
         save_file(selected_df=selected_df, file_name=selected_df_name)
     except IndexError:
         pass
@@ -199,48 +194,43 @@ def plot_graph():
 # Affichage Graphique ------------------------------------------------------------
 # --------------------------------------------------------------------------------
 def graphic_column_selection(df):
-    # Créer une liste des colonnes disponibles dans le DataFrame
     columns = df.columns.tolist()
 
-    # Créer une nouvelle fenêtre pour la boîte de dialogue
     column_dialog = tk.Toplevel(root)
     column_dialog.title("Choix des colonnes")
 
-    # Label pour le message
     new_label = tk.Label(column_dialog, text="Choisissez les colonnes pour tracer un graphique :")
     new_label.pack(pady=10)
 
-    # Créer une Combobox pour afficher les colonnes disponibles
     label_abscisse = tk.Label(column_dialog, text="Abscisse :")
     label_abscisse.pack(pady=10, padx=10, anchor="w")
     abscisse = tk.StringVar()
+
     column_combobox = ttk.Combobox(column_dialog,
                                    textvariable=abscisse,
                                    values=columns,
                                    width=max(len(col) for col in columns) + 2)
     column_combobox.pack(pady=(0, 5), padx=10)  # Ajout du padding uniquement en bas
 
-    # Créer une Combobox pour afficher les colonnes disponibles
     label_ordonnee = tk.Label(column_dialog, text="Ordonnée :")
     label_ordonnee.pack(pady=10, padx=10, anchor="w")
     ordonnee = tk.StringVar()
+
     column_combobox2 = ttk.Combobox(column_dialog,
                                     textvariable=ordonnee,
                                     values=columns,
                                     width=max(len(col) for col in columns) + 2)
     column_combobox2.pack(pady=(0, 5), padx=10)  # Ajout du padding uniquement en bas
 
-    # Fonction pour décrire la colonne sélectionnée
     def graphics_column(selected_df):
         abscisse_column = abscisse.get()
         ordonnee_column = ordonnee.get()
         if abscisse_column and ordonnee_column:
-            # Créer un graphique Plotly interactif
             fig = go.Figure()
             fig.add_trace(
                 go.Scatter(x=selected_df[abscisse_column], y=selected_df[ordonnee_column], mode='lines+markers',
                            name='Sales'))
-            # Mise à jour des paramètres esthétiques
+
             fig.update_traces(marker=dict(size=6, color='navy'), line=dict(width=2, color='darkcyan'))
             fig.update_layout(title=f"Graphique de {ordonnee_column} en fonction de {abscisse_column}",
                               xaxis_title=abscisse_column,
@@ -251,32 +241,24 @@ def graphic_column_selection(df):
                               hovermode='x',  # Mode de survol
                               margin=dict(l=50, r=50, t=50, b=50),  # Marges
                               xaxis=dict(showgrid=True, gridcolor='lightgrey'),
-                              # Afficher la grille de l'axe x avec une couleur plus claire
-                              yaxis=dict(showgrid=True, gridcolor='lightgrey'),
-                              # Afficher la grille de l'axe y avec une couleur plus claire
-                              )
+                              yaxis=dict(showgrid=True, gridcolor='lightgrey'))
             fig.update_xaxes(rangeslider_visible=True)
-            # Afficher le graphique interactif
             fig.show()
 
-    # Bouton OK
     ok_button = ttk.Button(column_dialog, text="OK", command=lambda: graphics_column(selected_df=df))
     ok_button.pack(pady=5)
 
 
 # --------------------------------------------------------------------------------
-# Combinaison de 2 DataFrame ------------------------------------------------------------
+# Combinaison de 2 DataFrame -----------------------------------------------------
 # --------------------------------------------------------------------------------
 def combination_selection():
     list_of_df = [lb.get(i) for i in range(lb.size())]
     if lb.size() == 0:
         return
     else:
-        # Créer une nouvelle fenêtre pour la boîte de dialogue
         df_dialogue = tk.Toplevel(root)
         df_dialogue.title("Choix des DataFrames")
-
-        # Centrer la fenêtre
         window_width = 500
         window_height = 350
         screen_width = df_dialogue.winfo_screenwidth()
@@ -285,30 +267,29 @@ def combination_selection():
         y_coordinate = (screen_height / 2) - (window_height / 2)
         df_dialogue.geometry(f"{window_width}x{window_height}+{int(x_coordinate)}+{int(y_coordinate)}")
 
-        # Label pour le message
         new_label = tk.Label(df_dialogue,
                              text="Choisissez les DataFrames à combiner ainsi que la colonne sur laquelle les combiner :")
         new_label.pack(pady=10)
 
-        # Créer une Combobox pour afficher les df disponibles
         label_df_1 = tk.Label(df_dialogue, text="DataFrame 1 :")
         label_df_1.pack(pady=10, padx=10, anchor="w")
         df_1 = tk.StringVar()
+
         df_combobox1 = ttk.Combobox(df_dialogue,
                                     textvariable=df_1,
                                     values=list_of_df,
-                                    width=30)  # Ajuster la largeur selon le contenu
-        df_combobox1.pack(pady=(0, 5), padx=10)  # Ajout du padding uniquement en bas
+                                    width=30)
+        df_combobox1.pack(pady=(0, 5), padx=10)
 
-        # Créer une Combobox pour afficher les df disponibles
         label_df_2 = tk.Label(df_dialogue, text="DataFrame 2 :")
         label_df_2.pack(pady=10, padx=10, anchor="w")
         df_2 = tk.StringVar()
+
         df_combobox2 = ttk.Combobox(df_dialogue,
                                     textvariable=df_2,
-                                    values=[],  # Les valeurs seront mises à jour dynamiquement
-                                    width=30)  # Ajuster la largeur selon le contenu
-        df_combobox2.pack(pady=(0, 5), padx=10)  # Ajout du padding uniquement en bas
+                                    values=[],
+                                    width=30)
+        df_combobox2.pack(pady=(0, 5), padx=10)
 
         def update_df2_values(*args):
             df_combobox2.set('')
@@ -323,10 +304,10 @@ def combination_selection():
         df_1.trace_add('write', update_df2_values)
 
         def choose_common_column():
-            # Désactiver les Combobox df_1 et df_2
             df_combobox1.configure(state="disabled")
             df_combobox2.configure(state="disabled")
             ok_button.configure(state="disabled")
+
             dataframe_1 = df_1.get()
             dataframe_2 = df_2.get()
             index_1 = lb.get(0, "end").index(dataframe_1)
@@ -336,10 +317,11 @@ def combination_selection():
             selected_df2 = LIST_OF_DATA_FRAME[index_2]
             # Récupérer les colonnes communes
             common_columns = set(selected_df1.columns).intersection(selected_df2.columns)
-            # Créer une Combobox pour afficher les colonnes communes
+
             label_common_columns = tk.Label(df_dialogue, text="Colonnes communes :")
             label_common_columns.pack(pady=10, padx=10, anchor="w")
             common_columns_var = tk.StringVar()
+
             column_combobox3 = ttk.Combobox(df_dialogue,
                                             textvariable=common_columns_var,
                                             values=list(common_columns),
@@ -347,7 +329,7 @@ def combination_selection():
             column_combobox3.pack(pady=(0, 5), padx=10)  # Ajout du padding uniquement en bas
 
             def combine_dataframe():
-                common_column = common_columns_var.get()  # Retrieve the value of the StringVar
+                common_column = common_columns_var.get()
                 df_combined = pd.merge(selected_df1, selected_df2, on=common_column, how="inner")
                 LIST_OF_DATA_FRAME.append(df_combined)
                 combined_name = f"combined_({dataframe_1})_({dataframe_2})"
@@ -357,18 +339,16 @@ def combination_selection():
             combine_button = ttk.Button(df_dialogue, text="OK", command=combine_dataframe)
             combine_button.pack(pady=5)
 
-        # Bouton OK
         ok_button = ttk.Button(df_dialogue, text="Choisir la colonne commune", command=choose_common_column)
         ok_button.pack(pady=5)
 
-        # Centrer la fenêtre par rapport à la fenêtre principale (root)
         df_dialogue.transient(root)
         df_dialogue.grab_set()
         root.wait_window(df_dialogue)
 
 
 # --------------------------------------------------------------------------------
-# Dectection temporelle ----------------------------------------------------------
+# Dectection colonne temporelle ----------------------------------------------------------
 # --------------------------------------------------------------------------------
 def detect_temporal_columns(df):
     temporal_columns = []
@@ -386,6 +366,22 @@ def detect_temporal_columns(df):
     # Convertir les colonnes temporelles en timestamp
     for col in temporal_columns:
         df[col] = pd.to_datetime(df[col], errors="coerce")
+    return temporal_columns
+
+
+def detect_numerical_columns(df, temporal_columns):
+    numerical_columns = []
+    for col in df.columns:
+        if col not in temporal_columns:
+            try:
+                # Tentez de remplacer les virgules par des points avant la conversion
+                if pd.to_numeric(df[col].str.replace(',', '.'), errors='raise').dtype != 'object':
+                    numerical_columns.append(col)
+            except ValueError:
+                pass
+    for col in numerical_columns:
+        # Convertissez les colonnes numériques en nombres, en traitant les virgules correctement
+        df[col] = pd.to_numeric(df[col].str.replace(',', '.'), errors='coerce')
     return
 
 
@@ -408,7 +404,6 @@ def save_file(selected_df, file_name):
                                              filetypes=[("Fichiers CSV", "*.csv"), ("Tous les fichiers", "*.*")],
                                              initialdir="/chemin/vers/le/dossier",
                                              initialfile=file_name)
-    # Vérifier si un fichier a été sélectionné
     if file_path:
         # Enregistrer le DataFrame dans un fichier CSV à l'emplacement choisi
         selected_df.to_csv(file_path, index=False)
@@ -417,8 +412,9 @@ def save_file(selected_df, file_name):
 def save_new_dataframe(filepath, delimiter):
     df = pd.read_csv(filepath, delimiter=delimiter)
     df = df.dropna()
-    detect_temporal_columns(df)
-
+    temporal_columns = detect_temporal_columns(df)
+    print(temporal_columns)
+    detect_numerical_columns(df, temporal_columns)
     LIST_OF_DATA_FRAME.append(df)
 
 
@@ -454,17 +450,14 @@ def on_drop(event):
         else:
             should_load.append(False)
     if False not in should_load:
-        # Maintenant, file_paths_list contient tous les chemins de fichiers, certains entourés d'accolades et d'autres non
+        # Maintenant, file_paths_list contient tous les chemins de fichiers
         # Créer une fenêtre de progression
         progress_window = tk.Toplevel(root)
         progress_window.title("Progression du chargement")
         # Maintenir la fenêtre au premier plan
         progress_window.lift()
-        # Grabber la fenêtre pour s'assurer qu'elle reste au premier plan
         progress_window.grab_set()
-        # Masquer la fenêtre de progression initialement
         progress_window.withdraw()
-        # Calculer la position pour centrer la fenêtre de progression par rapport à la fenêtre principale
         root.update_idletasks()
         window_width = progress_window.winfo_width()
         window_height = progress_window.winfo_height()
@@ -490,7 +483,6 @@ def on_drop(event):
         show_attention_message_box()
 
 
-# Utilisez start_loading comme fonction séparée
 def start_loading(progress_window, progress_bar, total_files, file_paths_list, progress_step):
     # Rafraîchir l'interface graphique avant de commencer le chargement
     root.update_idletasks()
@@ -507,7 +499,6 @@ def start_loading(progress_window, progress_bar, total_files, file_paths_list, p
             progress_bar["value"] += progress_step
             root.update()
 
-            # Fermer la fenêtre de progression une fois le chargement terminé
     progress_window.destroy()
     show_file_registered()
 
@@ -535,28 +526,105 @@ def describe_selected_column(df, column_var, df_name):
 
         # Récupération des statistiques de la colonne sélectionnée
         description = df[selected_column].describe()
+        print(description)
         title = f"DataFrame : {df_name}"
         title_2 = f"Colonne sélectionnée : {selected_column}"
         title_3 = f"Statistiques"
-        # Création du texte formaté avec les valeurs récupérées
 
-        report_text = (
-            f"{title}\n"
-            f"{'-' * 70}\n"
-            f"{title_2}\n"
-            f"{'-' * 70}\n"
-            f"{title_3}\n"
-            f"{'-' * 70}\n"
-            f"Nombre d'éléments : {description['count']}\n"
-            f"Moyenne : {description['mean']:.2f}\n"
-            f"Écart-type : {description['std']:.2f}\n"
-            f"Minimum : {description['min']}\n"
-            f"25ème percentile : {description['25%']}\n"
-            f"50ème percentile : {description['50%']}\n"
-            f"75ème percentile : {description['75%']}\n"
-            f"Maximum : {description['max']}\n"
+        # Détection du type de colonne
+        condition = detect_column_type(df[selected_column])
 
-        )
+        # Création du texte formaté en fonction du type de colonne
+        if condition == "numeric":
+            report_text = (
+                f"{title}\n"
+                f"{'-' * 70}\n"
+                f"{title_2}\n"
+                f"{'-' * 70}\n"
+                f"{title_3}\n"
+                f"{'-' * 70}\n"
+                f"Nombre d'éléments : {description['count']}\n"
+                f"Moyenne : {description['mean']:.2f}\n"
+                f"Écart-type : {description['std']:.2f}\n"
+                f"Minimum : {description['min']}\n"
+                f"25ème percentile : {description['25%']}\n"
+                f"50ème percentile : {description['50%']}\n"
+                f"75ème percentile : {description['75%']}\n"
+                f"Maximum : {description['max']}\n"
+            )
+        elif condition == "timestamp":
+            report_text = (
+                f"{title}\n"
+                f"{'-' * 70}\n"
+                f"{title_2}\n"
+                f"{'-' * 70}\n"
+                f"{title_3}\n"
+                f"{'-' * 70}\n"
+                f"Nombre d'éléments : {description['count']}\n"
+                f"Première valeur : {df[selected_column].iloc[0]}\n"
+                f"Dernière valeur : {df[selected_column].iloc[-1]}\n"
+            )
+        elif condition == "categorical":
+            report_text = (
+                f"{title}\n"
+                f"{'-' * 70}\n"
+                f"{title_2}\n"
+                f"{'-' * 70}\n"
+                f"{title_3}\n"
+                f"{'-' * 70}\n"
+                f"Nombre d'éléments uniques : {len(description.unique())}\n"  
+                f"Valeur la plus fréquente : {description['top']}\n"
+                f"Fréquence de la valeur la plus fréquente : {description['freq']}\n"
+            )
+        elif condition == "boolean":
+            report_text = (
+                f"{title}\n"
+                f"{'-' * 70}\n"
+                f"{title_2}\n"
+                f"{'-' * 70}\n"
+                f"{title_3}\n"
+                f"{'-' * 70}\n"
+                f"Nombre de True : {description['top']}\n"
+                f"Nombre de False : {description['count'] - description['top']}\n"
+            )
+        elif condition == "digit":
+            nbre_de_un = (df[selected_column] == 1).sum()
+            nbre_de_0 = (df[selected_column] == 0).sum()
+            total = df[selected_column].count()
+            report_text = (
+                f"{title}\n"
+                f"{'-' * 70}\n"
+                f"{title_2}\n"
+                f"{'-' * 70}\n"
+                f"{title_3}\n"
+                f"{'-' * 70}\n"
+                f"Nombre de 1 : {nbre_de_un}  soit {(nbre_de_un/total)*100} %\n"
+                f"Nombre de 0 : {nbre_de_0}  soit {(nbre_de_0/total)*100} %\n"
+            )
+        elif condition == "timedelta":
+            report_text = (
+                f"{title}\n"
+                f"{'-' * 70}\n"
+                f"{title_2}\n"
+                f"{'-' * 70}\n"
+                f"{title_3}\n"
+                f"{'-' * 70}\n"
+                f"Minimum : {description['min']}\n"
+                f"Maximum : {description['max']}\n"
+            )
+        else:  # Object
+            report_text = (
+                f"{title}\n"
+                f"{'-' * 70}\n"
+                f"{title_2}\n"
+                f"{'-' * 70}\n"
+                f"{title_3}\n"
+                f"{'-' * 70}\n"
+                f"Nombre d'éléments uniques : {len(description.unique())}\n"  
+                f"Valeur la plus fréquente : {description['top']}\n"
+                f"Fréquence de la valeur la plus fréquente : {description['freq']}\n"
+            )
+
         # Affichage du texte formaté dans un widget Text
         text_widget = tk.Text(describe_window, wrap="word", height=15, width=60, selectbackground="blue")
         text_widget.insert("end", report_text)
@@ -596,6 +664,20 @@ def describe_selected_column(df, column_var, df_name):
         save_button = tk.Button(describe_window, text="Enregistrer un rapport en PDF", command=save_report_as_pdf)
         save_button.pack(pady=10)
 
+
+def detect_column_type(col):
+    if pd.api.types.is_numeric_dtype(col):
+        if col.isin([0, 1]).all():
+            return "digit"
+        return "numeric"
+    elif pd.api.types.is_datetime64_any_dtype(col):
+        return "timestamp"
+    elif pd.api.types.is_timedelta64_dtype(col):
+        return "timedelta"
+    elif pd.api.types.is_categorical_dtype(col):
+        return "categorical"
+    else:
+        return "object"
 
 def clean_dataframe(df, name):
     # Définir les noms des algorithmes disponibles
@@ -771,7 +853,7 @@ def detect_delimiter(file_path):
     with open(file_path, "r") as file:
         first_line = file.readline()  # Lire la première ligne du fichier
         # Délimiteurs potentiels à tester
-        delimiters = [',', ';', '\t', '|', ' ', ':']
+        delimiters = [',', ';', '\t', '|', ':']
         delimiter_counts = {delimiter: first_line.count(delimiter) for delimiter in delimiters}
         most_common_delimiter = max(delimiter_counts, key=delimiter_counts.get)
         return most_common_delimiter
